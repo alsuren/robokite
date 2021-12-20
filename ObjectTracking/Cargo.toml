@@ -6,3 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1.0.51"
+opencv = { version = "0.61", features = ["highgui", "ximgproc"] }
+
+[[bin]]
+name = "basic_control_1d"
+path = "src/bin/basic_control_1d.rs"
