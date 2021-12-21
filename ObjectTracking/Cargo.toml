@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.51"
 color-eyre = "0.5.11"
+float-ord = "0.3.2"
 opencv = { version = "0.61", features = ["highgui", "ximgproc"] }
 
 [[bin]]

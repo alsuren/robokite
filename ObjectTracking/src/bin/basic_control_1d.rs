@@ -8,16 +8,18 @@ use std::time::Duration;
 use color_eyre::eyre;
 use opencv::core::{
     abs_matexpr, min, no_array, sub_scalar_mat, KeyPoint, MatExpr, Point, Scalar, Size,
-    ToInputArray, Vector, _InputArrayTraitConst, mix_channels, split, CV_32FC3,
+    ToInputArray, Vector, _InputArrayTraitConst, mix_channels, split, BorderTypes, CV_32FC3,
+    CV_8UC3,
 };
-use opencv::features2d::{SimpleBlobDetector, SimpleBlobDetector_Params};
+use opencv::features2d::{self, SimpleBlobDetector, SimpleBlobDetector_Params};
 use opencv::imgproc::MORPH_CLOSE;
 use opencv::prelude::*;
-use opencv::{highgui, imgproc, videoio, ximgproc};
+use opencv::{highgui, imgproc, videoio};
 
 // import serial
 trait MatExt {
     fn to_float(&self) -> Result<Mat, eyre::Error>;
+    fn to_8bit(&self) -> Result<Mat, eyre::Error>;
     fn flatten_hue(&self) -> Result<Mat, eyre::Error>;
     fn hue_distance(&self) -> Result<Mat, eyre::Error>;
     fn invert(&self) -> Result<Mat, eyre::Error>;
@@ -29,6 +31,11 @@ impl MatExt for Mat {
     fn to_float(&self) -> Result<Mat, eyre::Error> {
         let mut ret = Mat::default();
         self.convert_to(&mut ret, CV_32FC3, 1. / 255., 0.)?;
+        Ok(ret)
+    }
+    fn to_8bit(&self) -> Result<Mat, eyre::Error> {
+        let mut ret = Mat::default();
+        self.convert_to(&mut ret, CV_8UC3, 255., 0.)?;
         Ok(ret)
     }
     fn flatten_hue(&self) -> Result<Mat, eyre::Error> {
@@ -78,9 +85,11 @@ impl MatExt for Mat {
             )?)?,
             &mut distance,
         )?;
-        let mut ret = Mat::default();
         // FIXME: I feel like SimpleCV has some better treatment here, like clipping to 1.
-        distance.convert_to(&mut ret, CV_32FC3, 1. / 90., 0.)?;
+        let mut tmp = Mat::default();
+        distance.convert_to(&mut tmp, CV_32FC3, 1. / 30., 0.)?;
+        let mut ret = Mat::default();
+        imgproc::cvt_color(&tmp, &mut ret, imgproc::COLOR_BGR2GRAY, 1)?;
 
         Ok(ret)
     }
@@ -109,6 +118,8 @@ impl MatExt for Mat {
         //
         // blobmaker = BlobMaker()
         let mut blobmaker = SimpleBlobDetector::create(SimpleBlobDetector_Params {
+            // FIXME: this is a bit of a hack.
+            min_area: max_area / 20.0,
             max_area,
             ..SimpleBlobDetector_Params::default()?
         })?;
@@ -125,7 +136,9 @@ impl MatExt for Mat {
         //     return None
         //
         // return FeatureSet(blobs).sortArea()
-
+        let mut blobs = blobs.to_vec();
+        blobs.sort_by_key(|b| float_ord::FloatOrd(b.size));
+        let blobs = Vector::from_iter(blobs.into_iter());
         Ok(blobs)
     }
 }
@@ -139,9 +152,22 @@ impl<T: ToInputArray> ToInputArrayExt for T {
     fn morph_close(&self) -> Result<Mat, eyre::Error> {
         let mut ret = Mat::default();
         // kern = cv.CreateStructuringElementEx(3, 3, 1, 1, cv.CV_SHAPE_RECT);
-        let kern = ximgproc::get_structuring_element(imgproc::MORPH_RECT, Size::new(3, 3))?;
+        let kern = imgproc::get_structuring_element(
+            imgproc::MORPH_RECT,
+            Size::new(3, 3),
+            Point::new(-1, -1),
+        )?;
         // cv.MorphologyEx(self.getBitmap(), ret, temp, kern, cv.MORPH_CLOSE, 1)
-        ximgproc::morphology_ex(self, &mut ret, MORPH_CLOSE, &kern, true, Point::new(-1, -1))?;
+        imgproc::morphology_ex(
+            self,
+            &mut ret,
+            MORPH_CLOSE,
+            &kern,
+            Point::new(-1, -1),
+            1,
+            BorderTypes::BORDER_CONSTANT as i32,
+            imgproc::morphology_default_border_value()?,
+        )?;
         Ok(ret)
     }
 }
@@ -161,7 +187,7 @@ fn main() -> eyre::Result<()> {
     //    A green fresbee was attached to a line rolled over the axis of the motor which was controlled"""
 
     // ser = serial.Serial('/dev/ttyACM2', 9600)
-    let mut ser = std::io::stdout();
+    // let mut ser = std::io::stdout();
 
     let alpha = 0.8;
 
@@ -176,25 +202,34 @@ fn main() -> eyre::Result<()> {
         // myLayer = DrawingLayer((img.width,img.height))
         // disk_img = img.hueDistance(color=Color.GREEN).invert().morphClose().morphClose().threshold(200)
         // let disk_img = img.to_float()?.flatten_hue()?;
-        let disk_img = img.to_float()?.hue_distance()?;
+        let mut disk_img = img
+            .to_float()?
+            .hue_distance()?
+            .invert()?
+            .morph_close()?
+            .morph_close()?
+            .threshold(200.0 / 255.0)?
+            .to_8bit()?;
 
-        // .invert()?
-        // .morph_close()?
-        // .morph_close()?
-        // .threshold(200.0 / 255.0)?;
+        let disk = disk_img.find_blobs(2000.0)?;
+        if !disk.is_empty() {
+            // disk[0].drawMinRect(layer=myLayer, color=Color.RED)
+            // disk_img.addDrawingLayer(myLayer)
+            features2d::draw_keypoints(
+                &disk_img.clone(),
+                &disk,
+                &mut disk_img,
+                Scalar::all(-1f64),
+                features2d::DrawMatchesFlags::DEFAULT,
+            )?;
+            let position = disk.get(0)?.pt;
+            dbg!(&position);
+            let z = alpha * position.y + (1.0 - alpha) * previous_z;
+            // ser.write(str((z-200)*0.03))
+            println!("{}", (z - 200.0) * 0.03);
+            previous_z = z;
+        }
         highgui::imshow(window, &disk_img)?;
-
-        // let disk = disk_img.find_blobs(2000.0)?;
-        // if !disk.is_empty() {
-        //     // disk[0].drawMinRect(layer=myLayer, color=Color.RED)
-        //     // disk_img.addDrawingLayer(myLayer)
-        //     let position = disk.get(0)?.pt;
-        //     dbg!(&position);
-        //     let z = alpha * position.y + (1.0 - alpha) * previous_z;
-        //     write!(ser, "{}", (z - 200.0) * 0.03)?;
-        //     previous_z = z;
-        // }
-        // disk_img.save(disp)
         if highgui::wait_key(10)? > 0 {
             break;
         }
