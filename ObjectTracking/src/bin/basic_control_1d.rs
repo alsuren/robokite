@@ -1,5 +1,6 @@
 // import time
 use std::io::Write;
+use std::ops::Div;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -7,7 +8,7 @@ use std::time::Duration;
 use color_eyre::eyre;
 use opencv::core::{
     abs_matexpr, min, no_array, sub_scalar_mat, KeyPoint, MatExpr, Point, Scalar, Size,
-    ToInputArray, Vector, _InputArrayTraitConst,
+    ToInputArray, Vector, _InputArrayTraitConst, mix_channels, split, CV_32FC3,
 };
 use opencv::features2d::{SimpleBlobDetector, SimpleBlobDetector_Params};
 use opencv::imgproc::MORPH_CLOSE;
@@ -16,6 +17,8 @@ use opencv::{highgui, imgproc, videoio, ximgproc};
 
 // import serial
 trait MatExt {
+    fn to_float(&self) -> Result<Mat, eyre::Error>;
+    fn flatten_hue(&self) -> Result<Mat, eyre::Error>;
     fn hue_distance(&self) -> Result<Mat, eyre::Error>;
     fn invert(&self) -> Result<Mat, eyre::Error>;
     fn threshold(&self, thresh: f64) -> Result<Mat, eyre::Error>;
@@ -23,29 +26,68 @@ trait MatExt {
 }
 
 impl MatExt for Mat {
+    fn to_float(&self) -> Result<Mat, eyre::Error> {
+        let mut ret = Mat::default();
+        self.convert_to(&mut ret, CV_32FC3, 1. / 255., 0.)?;
+        Ok(ret)
+    }
+    fn flatten_hue(&self) -> Result<Mat, eyre::Error> {
+        let mut hsv_channels = Mat::default();
+        imgproc::cvt_color(self, &mut hsv_channels, imgproc::COLOR_BGR2HSV, 1)?;
+
+        let mut hue_channel = Mat::new_rows_cols_with_default(
+            hsv_channels.rows(),
+            hsv_channels.cols(),
+            CV_32FC3,
+            // set Saturation and Value to 0.5 so we can see things;
+            Scalar::new(0., 0.5, 0.5, 1.),
+        )?;
+        mix_channels(&hsv_channels, &mut hue_channel, &[0, 0])?;
+
+        let mut ret = Mat::default();
+        imgproc::cvt_color(&hue_channel, &mut ret, imgproc::COLOR_HSV2BGR, 0)?;
+        Ok(ret)
+    }
     // from SimpleCV, which is BSD 3-Clause
     fn hue_distance(&self /* TODO: color: ???*/) -> Result<Mat, eyre::Error> {
         assert!(!self.empty());
 
-        let mut hue_channel = Mat::default();
-        imgproc::cvt_color(self, &mut hue_channel, imgproc::COLOR_BGR2HSV, 1)?;
-        let color_hue = 60.;
-        let color_hue_wrapped = 60. + 360.;
-        let mut ret = Mat::default();
+        let mut hsv_channels = Mat::default();
+        imgproc::cvt_color(self, &mut hsv_channels, imgproc::COLOR_BGR2HSV, 1)?;
+
+        let mut hue_channel = Mat::new_rows_cols_with_default(
+            hsv_channels.rows(),
+            hsv_channels.cols(),
+            CV_32FC3,
+            // set Saturation and Value to 0.5 so we can see things;
+            Scalar::new(0., 0.5, 0.5, 1.0),
+        )?;
+        mix_channels(&hsv_channels, &mut hue_channel, &[0, 0])?;
+        // turquoise, because I happen to have turquoise things near me.
+        let color_hue = 180.;
+        let color_hue_wrapped = 180. + 360.;
+        let mut distance = Mat::default();
         min(
-            &abs_matexpr(&sub_scalar_mat(Scalar::from(color_hue), &hue_channel)?)?,
             &abs_matexpr(&sub_scalar_mat(
-                Scalar::from(color_hue_wrapped),
+                Scalar::new(color_hue, 0.5, 0.5, 1.0),
                 &hue_channel,
             )?)?,
-            &mut ret,
+            &abs_matexpr(&sub_scalar_mat(
+                Scalar::new(color_hue_wrapped, 0.5, 0.5, 1.0),
+                &hue_channel,
+            )?)?,
+            &mut distance,
         )?;
+        let mut ret = Mat::default();
+        // FIXME: I feel like SimpleCV has some better treatment here, like clipping to 1.
+        distance.convert_to(&mut ret, CV_32FC3, 1. / 90., 0.)?;
+
         Ok(ret)
     }
     // 1 - self
     fn invert(&self) -> Result<Mat, eyre::Error> {
         assert!(!self.empty());
-        let expr = opencv::core::sub_scalar_mat(Scalar::from(1.0), self)?;
+        let expr = opencv::core::sub_scalar_mat(Scalar::new(1.0, 1.0, 1.0, 1.0), self)?;
         let mat = expr.input_array()?.get_mat(-1)?;
         Ok(mat)
     }
@@ -133,23 +175,29 @@ fn main() -> eyre::Result<()> {
 
         // myLayer = DrawingLayer((img.width,img.height))
         // disk_img = img.hueDistance(color=Color.GREEN).invert().morphClose().morphClose().threshold(200)
-        let disk_img = img
-            .hue_distance()?
-            .invert()?
-            // .morph_close()?
-            // .morph_close()?
-            .threshold(200.0 / 255.0)?;
-        let disk = disk_img.find_blobs(2000.0)?;
-        if !disk.is_empty() {
-            // disk[0].drawMinRect(layer=myLayer, color=Color.RED)
-            // disk_img.addDrawingLayer(myLayer)
-            let position = disk.get(0)?.pt;
-            dbg!(&position);
-            let z = alpha * position.y + (1.0 - alpha) * previous_z;
-            write!(ser, "{}", (z - 200.0) * 0.03)?;
-            previous_z = z;
-        }
+        // let disk_img = img.to_float()?.flatten_hue()?;
+        let disk_img = img.to_float()?.hue_distance()?;
+
+        // .invert()?
+        // .morph_close()?
+        // .morph_close()?
+        // .threshold(200.0 / 255.0)?;
+        highgui::imshow(window, &disk_img)?;
+
+        // let disk = disk_img.find_blobs(2000.0)?;
+        // if !disk.is_empty() {
+        //     // disk[0].drawMinRect(layer=myLayer, color=Color.RED)
+        //     // disk_img.addDrawingLayer(myLayer)
+        //     let position = disk.get(0)?.pt;
+        //     dbg!(&position);
+        //     let z = alpha * position.y + (1.0 - alpha) * previous_z;
+        //     write!(ser, "{}", (z - 200.0) * 0.03)?;
+        //     previous_z = z;
+        // }
         // disk_img.save(disp)
-        sleep(Duration::from_millis(10));
+        if highgui::wait_key(10)? > 0 {
+            break;
+        }
     }
+    Ok(())
 }
