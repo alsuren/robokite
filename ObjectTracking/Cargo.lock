@@ -9,6 +9,7 @@ dependencies = [
  "anyhow",
  "color-eyre",
  "float-ord",
+ "mjpeg_rs",
  "opencv",
  "tracing 0.1.29 (git+https://github.com/xd009642/tracing?branch=feature/valuable-integration)",
  "tracing-subscriber 0.2.25 (git+https://github.com/xd009642/tracing?branch=feature/valuable-integration)",
@@ -266,6 +267,12 @@ dependencies = [
  "adler",
  "autocfg",
 ]
+
+[[package]]
+name = "mjpeg_rs"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0286c84e99db6b13889a4e5a982f20014c26c5ae6fb9881208774e071cc4ecc7"
 
 [[package]]
 name = "num-integer"

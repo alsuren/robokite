@@ -1,3 +1,4 @@
+use std::ops::DerefMut;
 // import time
 use std::thread::sleep;
 use std::time::Duration;
@@ -13,7 +14,8 @@ use opencv::imgproc::MORPH_CLOSE;
 use opencv::prelude::*;
 use opencv::{highgui, imgproc, videoio};
 use tracing::field::valuable;
-use tracing::{info, warn};
+use tracing::subscriber::Interest;
+use tracing::{info, span, warn};
 use valuable::Valuable;
 
 // import serial
@@ -185,9 +187,129 @@ impl JpegImage {
     }
 }
 
+struct MJpegTracingSubscriber {
+    // mjpeg_rs::MJpeg doesn't *need* to be wrapped in a mutex,
+    // but it does not expose a way to tell whether its SyncSender
+    // would block, so let's hack around it, and submit a patch upstream later.
+    //
+    // We also need a Mutex to turn &self into &mut MJpegVisitor, so maybe it
+    // can stay like this for a while?
+    visitor: std::sync::Mutex<MJpegVisitor>,
+}
+
+impl MJpegTracingSubscriber {
+    fn new() -> Self {
+        Self {
+            visitor: std::sync::Mutex::new(MJpegVisitor::new()),
+        }
+    }
+    fn init(self) {
+        let mjpeg_server = self.visitor.lock().unwrap().mjpeg_server.clone();
+        std::thread::spawn(move || mjpeg_server.run("0.0.0.0:8088").unwrap());
+        tracing::dispatcher::set_global_default(self.into()).unwrap();
+    }
+}
+
+impl tracing::Subscriber for MJpegTracingSubscriber {
+    // We toggle interest on and off depending on whether anyone is listening
+    fn register_callsite(&self, metadata: &tracing::Metadata<'_>) -> Interest {
+        Interest::sometimes()
+    }
+
+    // If the mjpeg server is behind, disable subscription for a bit
+    fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+        match self.visitor.try_lock() {
+            Ok(_) => true,
+            _ => false,
+        }
+    }
+
+    fn new_span(&self, span: &span::Attributes<'_>) -> span::Id {
+        todo!("implement new_span({:?})", span)
+    }
+
+    fn record(&self, span: &span::Id, values: &span::Record<'_>) {
+        todo!("implement record({:?}, {:?})", span, values)
+    }
+
+    fn record_follows_from(&self, span: &span::Id, follows: &span::Id) {
+        todo!("implement record_follows_from({:?}, {:?})", span, follows)
+    }
+
+    fn event(&self, event: &tracing::Event<'_>) {
+        match self.visitor.try_lock() {
+            Ok(ref mut visitor) => event.record(visitor.deref_mut()),
+            // visitor is already behind, so let's skip logging for now.
+            _ => (),
+        }
+    }
+
+    fn enter(&self, span: &span::Id) {
+        todo!("implement enter({:?})", span)
+    }
+
+    fn exit(&self, span: &span::Id) {
+        todo!("implement exit({:?})", span)
+    }
+}
+
+struct MJpegVisitor {
+    mjpeg_server: std::sync::Arc<mjpeg_rs::MJpeg>,
+}
+
+impl MJpegVisitor {
+    fn new() -> Self {
+        Self {
+            mjpeg_server: std::sync::Arc::new(mjpeg_rs::MJpeg::new()),
+        }
+    }
+}
+
+impl tracing::field::Visit for MJpegVisitor {
+    fn record_value(&mut self, field: &tracing::field::Field, value: &dyn valuable::Valuable) {
+        value.visit(self)
+    }
+
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        todo!()
+    }
+}
+
+impl valuable::Visit for MJpegVisitor {
+    fn visit_named_fields(&mut self, named_values: &valuable::NamedValues<'_>) {
+        todo!("visit_named_fields({:?})", named_values);
+        let _ = named_values;
+    }
+
+    fn visit_unnamed_fields(&mut self, values: &[valuable::Value<'_>]) {
+        for value in values {
+            if let Some(value) = value.as_listable() {
+                value.visit(self)
+            }
+        }
+    }
+
+    fn visit_primitive_slice(&mut self, slice: valuable::Slice<'_>) {
+        if let valuable::Slice::U8(data) = slice {
+            self.mjpeg_server.update_jpeg(data.to_vec()).unwrap()
+        }
+        // todo!("visit_primitive_slice()");
+    }
+
+    fn visit_entry(&mut self, key: valuable::Value<'_>, value: valuable::Value<'_>) {
+        todo!("visit_entry({:?}, {:?})", key, value);
+        let _ = (key, value);
+    }
+
+    fn visit_value(&mut self, value: valuable::Value<'_>) {
+        todo!()
+    }
+}
+
 fn main() -> eyre::Result<()> {
     color_eyre::install()?;
-    tracing_subscriber::fmt::init();
+    // tracing_subscriber::fmt::init();
+    MJpegTracingSubscriber::new().init();
 
     // cam = JpegStreamCamera('http://192.168.1.6:8080/videofeed')
     let mut cam = videoio::VideoCapture::new(0, videoio::CAP_ANY)?;
@@ -237,18 +359,19 @@ fn main() -> eyre::Result<()> {
                 features2d::DrawMatchesFlags::DEFAULT,
             )?;
             let position = disk.get(0)?.pt;
-            dbg!(&position);
+            // dbg!(&position);
             let z = alpha * position.y + (1.0 - alpha) * previous_z;
             // ser.write(str((z-200)*0.03))
-            println!("{}", (z - 200.0) * 0.03);
+            // println!("{}", (z - 200.0) * 0.03);
             previous_z = z;
         }
-        warn!("hi there");
+        // warn!("hi there");
         warn!(disk_img = valuable(JpegImage::from_mat(&disk_img)?));
-        highgui::imshow(window, &disk_img)?;
-        if highgui::wait_key(10)? > 0 || true {
-            break;
-        }
+        // highgui::imshow(window, &disk_img)?;
+        // if highgui::wait_key(10)? > 0 || true {
+        //     break;
+        // }
+        std::thread::sleep(Duration::from_millis(10))
     }
     Ok(())
 }

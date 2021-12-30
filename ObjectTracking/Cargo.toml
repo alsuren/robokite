@@ -9,6 +9,7 @@ edition = "2021"
 anyhow = "1.0.51"
 color-eyre = "0.5.11"
 float-ord = "0.3.2"
+mjpeg_rs = "0.0.1"
 opencv = { version = "0.61", features = ["imgcodecs", "highgui", "ximgproc", "clang-runtime"] }
 tracing = { git = "https://github.com/xd009642/tracing", branch = "feature/valuable-integration", features = ["valuable"] }
 tracing-subscriber = { git = "https://github.com/xd009642/tracing", branch = "feature/valuable-integration" }
