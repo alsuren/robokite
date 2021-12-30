@@ -1,20 +1,19 @@
 // import time
-use std::io::Write;
-use std::ops::Div;
 use std::thread::sleep;
 use std::time::Duration;
 
 // from SimpleCV import *
 use color_eyre::eyre;
 use opencv::core::{
-    abs_matexpr, min, no_array, sub_scalar_mat, KeyPoint, MatExpr, Point, Scalar, Size,
-    ToInputArray, Vector, _InputArrayTraitConst, mix_channels, split, BorderTypes, CV_32FC3,
-    CV_8UC3,
+    abs_matexpr, min, no_array, sub_scalar_mat, KeyPoint, Point, Scalar, Size, ToInputArray,
+    Vector, _InputArrayTraitConst, mix_channels, BorderTypes, CV_32FC3, CV_8UC3,
 };
 use opencv::features2d::{self, SimpleBlobDetector, SimpleBlobDetector_Params};
 use opencv::imgproc::MORPH_CLOSE;
 use opencv::prelude::*;
 use opencv::{highgui, imgproc, videoio};
+use tracing::{info, warn};
+use tracing_core::field::valuable;
 
 // import serial
 trait MatExt {
@@ -172,8 +171,21 @@ impl<T: ToInputArray> ToInputArrayExt for T {
     }
 }
 
+struct BGRImage(Mat);
+
+impl valuable::Valuable for BGRImage {
+    fn as_value(&self) -> valuable::Value<'_> {
+        todo!()
+    }
+
+    fn visit(&self, visit: &mut dyn valuable::Visit) {
+        todo!()
+    }
+}
+
 fn main() -> eyre::Result<()> {
     color_eyre::install()?;
+    tracing_subscriber::fmt::init();
 
     // cam = JpegStreamCamera('http://192.168.1.6:8080/videofeed')
     let mut cam = videoio::VideoCapture::new(0, videoio::CAP_ANY)?;
@@ -229,8 +241,10 @@ fn main() -> eyre::Result<()> {
             println!("{}", (z - 200.0) * 0.03);
             previous_z = z;
         }
+        warn!("hi there");
+        warn!(disk_img = valuable(BGRImage(disk_img.clone())));
         highgui::imshow(window, &disk_img)?;
-        if highgui::wait_key(10)? > 0 {
+        if highgui::wait_key(10)? > 0 || true {
             break;
         }
     }

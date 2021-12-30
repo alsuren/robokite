@@ -9,8 +9,16 @@ edition = "2021"
 anyhow = "1.0.51"
 color-eyre = "0.5.11"
 float-ord = "0.3.2"
-opencv = { version = "0.61", features = ["highgui", "ximgproc"] }
+opencv = { version = "0.61", features = ["highgui", "ximgproc", "clang-runtime"] }
+tracing = { git = "https://github.com/xd009642/tracing", branch = "feature/valuable-integration", features = ["valuable"] }
+tracing-core = { git = "https://github.com/xd009642/tracing", branch = "feature/valuable-integration", features = ["valuable"] }
+tracing-subscriber = { git = "https://github.com/xd009642/tracing", branch = "feature/valuable-integration" }
+valuable = { git = "https://github.com/tokio-rs/valuable", features = ["derive"] }
 
 [[bin]]
 name = "basic_control_1d"
 path = "src/bin/basic_control_1d.rs"
+
+[[bin]]
+name = "test_track"
+path = "src/bin/test_track.rs"
