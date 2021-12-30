@@ -12,8 +12,8 @@ use opencv::features2d::{self, SimpleBlobDetector, SimpleBlobDetector_Params};
 use opencv::imgproc::MORPH_CLOSE;
 use opencv::prelude::*;
 use opencv::{highgui, imgproc, videoio};
+use tracing::field::valuable;
 use tracing::{info, warn};
-use tracing_core::field::valuable;
 
 // import serial
 trait MatExt {
