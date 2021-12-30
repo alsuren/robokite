@@ -14,6 +14,7 @@ use opencv::prelude::*;
 use opencv::{highgui, imgproc, videoio};
 use tracing::field::valuable;
 use tracing::{info, warn};
+use valuable::Valuable;
 
 // import serial
 trait MatExt {
@@ -171,15 +172,16 @@ impl<T: ToInputArray> ToInputArrayExt for T {
     }
 }
 
-struct BGRImage(Mat);
+// FIXME: this appears to use the debug representation if printed
+// to the console. We should make this prettier somehow.
+#[derive(Valuable)]
+struct JpegImage(Vec<u8>);
 
-impl valuable::Valuable for BGRImage {
-    fn as_value(&self) -> valuable::Value<'_> {
-        todo!()
-    }
-
-    fn visit(&self, visit: &mut dyn valuable::Visit) {
-        todo!()
+impl JpegImage {
+    fn from_mat(mat: &Mat) -> Result<Self, eyre::Error> {
+        let mut buf = Default::default();
+        opencv::imgcodecs::imencode(".jpg", mat, &mut buf, &Default::default())?;
+        Ok(JpegImage(buf.to_vec()))
     }
 }
 
@@ -242,7 +244,7 @@ fn main() -> eyre::Result<()> {
             previous_z = z;
         }
         warn!("hi there");
-        warn!(disk_img = valuable(BGRImage(disk_img.clone())));
+        warn!(disk_img = valuable(JpegImage::from_mat(&disk_img)?));
         highgui::imshow(window, &disk_img)?;
         if highgui::wait_key(10)? > 0 || true {
             break;
