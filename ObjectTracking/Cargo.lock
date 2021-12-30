@@ -152,6 +152,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-channel"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06ed27e177f16d65f0f0c22a213e17c696ace5dd64b14258b52f9417ccb52db4"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
+]
+
+[[package]]
+name = "crossbeam-utils"
+version = "0.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d82cfc11ce7f2c3faef78d8a684447b40d503d9681acebed6cb728d45940c4db"
+dependencies = [
+ "cfg-if",
+ "lazy_static",
+]
+
+[[package]]
 name = "dunce"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -271,8 +291,10 @@ dependencies = [
 [[package]]
 name = "mjpeg_rs"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0286c84e99db6b13889a4e5a982f20014c26c5ae6fb9881208774e071cc4ecc7"
+source = "git+https://github.com/alsuren/mjpeg_rs?branch=backpressure#45fb62cd3caa7c4015f32b98395f2a58a88d798d"
+dependencies = [
+ "crossbeam-channel",
+]
 
 [[package]]
 name = "num-integer"

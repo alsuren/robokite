@@ -219,7 +219,7 @@ impl tracing::Subscriber for MJpegTracingSubscriber {
     // If the mjpeg server is behind, disable subscription for a bit
     fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
         match self.visitor.try_lock() {
-            Ok(_) => true,
+            Ok(visitor) => !visitor.mjpeg_server.is_full(),
             _ => false,
         }
     }
