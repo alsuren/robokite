@@ -15,7 +15,7 @@ use opencv::prelude::*;
 use opencv::{highgui, imgproc, videoio};
 use tracing::field::valuable;
 use tracing::subscriber::Interest;
-use tracing::{info, span, warn};
+use tracing::{info, span, trace, warn, Level};
 use valuable::Valuable;
 
 // import serial
@@ -213,7 +213,13 @@ impl MJpegTracingSubscriber {
 impl tracing::Subscriber for MJpegTracingSubscriber {
     // We toggle interest on and off depending on whether anyone is listening
     fn register_callsite(&self, metadata: &tracing::Metadata<'_>) -> Interest {
-        Interest::sometimes()
+        if *metadata.level() <= Level::DEBUG {
+            // debug/warn etc will always be printed as text
+            Interest::always()
+        } else {
+            // trace messages might contain images
+            Interest::sometimes()
+        }
     }
 
     // If the mjpeg server is behind, disable subscription for a bit
@@ -271,7 +277,9 @@ impl tracing::field::Visit for MJpegVisitor {
     }
 
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        todo!()
+        // HACK: just print them for now.
+        // We should really find a way to forward events to a downstream tracing subscriber if they don't contain images.
+        eprintln!("debug: {}: {:?}", field, value)
     }
 }
 
@@ -365,13 +373,13 @@ fn main() -> eyre::Result<()> {
             // println!("{}", (z - 200.0) * 0.03);
             previous_z = z;
         }
-        // warn!("hi there");
-        warn!(disk_img = valuable(JpegImage::from_mat(&disk_img)?));
+        warn!("hi there");
+        trace!(disk_img = valuable(JpegImage::from_mat(&disk_img)?));
         // highgui::imshow(window, &disk_img)?;
         // if highgui::wait_key(10)? > 0 || true {
         //     break;
         // }
-        std::thread::sleep(Duration::from_millis(10))
+        std::thread::sleep(Duration::from_millis(1000))
     }
     Ok(())
 }
